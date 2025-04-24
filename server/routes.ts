@@ -69,8 +69,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Invalid storage amount" });
       }
       
-      // Import the payment service
-      const { PaymentService } = await import("./payment");
+      // Import the Razorpay payment service
+      const { PaymentService } = await import("./razorpay-payment");
       
       // Standard pricing is 1 rupee per GB per month
       const pricePerGB = 1;
@@ -95,27 +95,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     
     try {
-      const { paymentIntentId, providerId } = req.body;
+      const { orderId, paymentId, signature, providerId, amount, storageAmount } = req.body;
       
-      if (!paymentIntentId) {
-        return res.status(400).json({ message: "Missing payment intent ID" });
+      if (!orderId || !paymentId || !signature) {
+        return res.status(400).json({ message: "Missing payment details" });
       }
       
       if (!providerId || isNaN(parseInt(providerId))) {
         return res.status(400).json({ message: "Invalid provider ID" });
       }
       
-      // Import the payment service
-      const { PaymentService } = await import("./payment");
+      // Import the Razorpay payment service
+      const { PaymentService } = await import("./razorpay-payment");
       
       // Confirm payment and update provider earnings
       const result = await PaymentService.confirmProviderEarnings(
-        paymentIntentId,
+        {
+          orderId,
+          paymentId,
+          signature,
+          amount
+        },
         parseInt(providerId)
       );
       
       // Update storage allocation for the renter
-      const { storageAmount } = req.body;
       if (storageAmount && !isNaN(parseInt(storageAmount))) {
         const renter = await storage.getUser(req.user!.id);
         if (renter) {
@@ -144,8 +148,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Missing plan ID" });
       }
       
-      // Import the payment service
-      const { PaymentService } = await import("./payment");
+      // Import the Razorpay payment service
+      const { PaymentService } = await import("./razorpay-payment");
       
       // Create subscription
       const result = await PaymentService.createSubscription(

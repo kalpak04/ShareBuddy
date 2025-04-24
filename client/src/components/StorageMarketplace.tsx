@@ -24,7 +24,7 @@ import {
   Shield, 
   DollarSign 
 } from 'lucide-react';
-import PaymentForm from './PaymentForm';
+import RazorpayPaymentForm from './RazorpayPaymentForm';
 
 export default function StorageMarketplace() {
   const { user } = useAuth();
@@ -277,7 +277,7 @@ export default function StorageMarketplace() {
               </div>
             </div>
           ) : (
-            <PaymentForm
+            <RazorpayPaymentForm
               providerId={selectedProvider?.userId}
               storageAmount={storageAmount}
               onPaymentSuccess={handlePaymentSuccess}
