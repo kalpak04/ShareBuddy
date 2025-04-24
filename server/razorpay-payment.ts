@@ -3,7 +3,7 @@ import { storage } from './storage';
 import crypto from 'crypto';
 
 if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
-  throw new Error('Missing Razorpay API keys. Please set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET environment variables.');
+  throw new Error('Missing or Incorrect Razorpay API keys. Please set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET environment variables.');
 }
 
 // Initialize Razorpay instance
