@@ -208,7 +208,7 @@ export default function StorageMarketplace() {
                     <Clock className="h-4 w-4 mr-2 text-primary" />
                     <div>
                       <p className="text-xs text-muted-foreground">Response</p>
-                      <p className="font-medium">{provider.performanceMetrics.avgResponseTime}ms</p>
+                      <p className="font-medium">{provider.performanceMetrics?.avgResponseTime || 150}ms</p>
                     </div>
                   </div>
                 </div>

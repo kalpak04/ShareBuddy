@@ -266,6 +266,61 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get available storage nodes/providers
+  app.get("/api/storage-nodes", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    
+    try {
+      // In a real implementation, you would fetch this from the database
+      // For demo, we'll return hardcoded providers
+      const mockProviders = [
+        {
+          id: 1,
+          userId: 2,
+          nodeId: 'node_1',
+          ipAddress: '192.168.1.1',
+          storageTotal: 10240, // 10GB in MB
+          storageAvailable: 8192, // 8GB in MB
+          status: 'online',
+          geolocation: 'Mumbai, India',
+          lastSeen: new Date(),
+          reputation: 92,
+          uptimePercentage: 99,
+          performanceMetrics: {
+            avgResponseTime: 120,
+            successfulTransfers: 245,
+            failedTransfers: 3,
+            avgBandwidth: 10.5,
+          },
+        },
+        {
+          id: 2,
+          userId: 4,
+          nodeId: 'node_2',
+          ipAddress: '192.168.1.2',
+          storageTotal: 20480, // 20GB in MB
+          storageAvailable: 15360, // 15GB in MB
+          status: 'online',
+          geolocation: 'Delhi, India',
+          lastSeen: new Date(),
+          reputation: 88,
+          uptimePercentage: 98,
+          performanceMetrics: {
+            avgResponseTime: 150,
+            successfulTransfers: 178,
+            failedTransfers: 5,
+            avgBandwidth: 8.2,
+          },
+        }
+      ];
+      
+      return res.json(mockProviders);
+    } catch (error) {
+      console.error(error);
+      return res.status(500).json({ message: "Failed to fetch storage providers" });
+    }
+  });
+
   // P2P routes for storage providers
   app.post("/api/p2p/node/register", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);

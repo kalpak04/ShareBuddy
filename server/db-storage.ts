@@ -181,7 +181,9 @@ export class DatabaseStorage implements IStorage {
           storageReserved: 30720, // 30GB
           storageUsed: 15360,     // 15GB used
           storageShared: 51200,   // 50GB shared
-          earnings: 1500          // ₹15
+          earnings: 1500,         // ₹15
+          stripeCustomerId: null,
+          stripeSubscriptionId: null
         }
       ];
 
