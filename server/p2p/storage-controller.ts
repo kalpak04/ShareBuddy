@@ -246,6 +246,45 @@ export class StorageController {
   }
   
   /**
+   * Register a new storage node in the system
+   */
+  public async registerNode(userId: number, storageTotal: number, geolocation?: string) {
+    try {
+      // Generate unique node ID
+      const nodeId = `node_${randomBytes(16).toString('hex')}`;
+      
+      // Get user IP (in a real system, this would be more accurate)
+      const ip = "127.0.0.1"; // Placeholder
+      
+      // Insert node into database
+      const [node] = await db
+        .insert(storageNodes)
+        .values({
+          nodeId,
+          userId,
+          storageTotal,
+          storageAvailable: storageTotal,
+          status: "online",
+          ip,
+          geolocation: geolocation || "Unknown",
+          reputation: 80, // Start with decent reputation
+          lastSeen: new Date()
+        })
+        .returning();
+      
+      return {
+        success: true,
+        nodeId: node.nodeId,
+        storageTotal: node.storageTotal,
+        message: "Storage node registered successfully"
+      };
+    } catch (error) {
+      console.error("Error registering storage node:", error);
+      throw error;
+    }
+  }
+  
+  /**
    * Retrieve a file from distributed storage
    */
   public async retrieveFile(fileId: number, userId: number) {

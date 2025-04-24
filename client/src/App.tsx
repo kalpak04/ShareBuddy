@@ -10,6 +10,7 @@ import BackupPage from "@/pages/backup-page";
 import ProfilePage from "@/pages/profile-page";
 import AuthPage from "@/pages/auth-page";
 import ProviderSettingsPage from "@/pages/provider-settings-page";
+import P2PSettingsPage from "@/pages/p2p-settings-page";
 import { AuthProvider } from "@/hooks/use-auth";
 import { ProtectedRoute } from "./lib/protected-route";
 import AppShell from "@/components/layouts/AppShell";
@@ -41,6 +42,11 @@ function Router() {
       <ProtectedRoute path="/provider-settings" component={() => (
         <AppShell>
           <ProviderSettingsPage />
+        </AppShell>
+      )} />
+      <ProtectedRoute path="/p2p-settings" component={() => (
+        <AppShell>
+          <P2PSettingsPage />
         </AppShell>
       )} />
       {/* Fallback to 404 */}

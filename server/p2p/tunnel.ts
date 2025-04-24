@@ -1,10 +1,9 @@
-import WebSocket, { WebSocketServer } from "ws";
-import { Server } from "http";
-import { Encryption } from "../security/encryption";
-import { randomBytes } from "crypto";
-import { db } from "../db";
-import { storageNodes, peerConnections, FileChunk, StorageNode } from "@shared/schema";
-import { eq, and } from "drizzle-orm";
+import { Server } from 'http';
+import { WebSocketServer, WebSocket } from 'ws';
+import { randomBytes } from 'crypto';
+import { db } from '../db';
+import { storageNodes, peerConnections } from '@shared/schema';
+import { eq, and, desc, sql } from 'drizzle-orm';
 
 /**
  * P2P Tunnel Server for ShareBuddy
@@ -23,82 +22,118 @@ export class P2PTunnel {
   }> = new Map();
   
   constructor(server: Server) {
-    // Create WebSocket server on a distinct path to avoid conflicts with Vite HMR
-    this.wss = new WebSocketServer({ server, path: '/ws/p2p' });
+    // Initialize WebSocket server on the /ws/p2p path
+    this.wss = new WebSocketServer({ 
+      server, 
+      path: '/ws/p2p',
+    });
+    
+    console.log('P2P tunnel server initialized');
+    
+    // Set up connection handlers
     this.setupConnectionHandlers();
     
-    // Set up periodic peer health checks
+    // Start health checks every 30 seconds
     setInterval(() => this.performHealthChecks(), 30000);
-    
-    console.log("P2P tunnel server initialized");
   }
   
   private setupConnectionHandlers() {
     this.wss.on('connection', (ws, req) => {
-      // Generate unique peer ID for this connection
-      const peerId = randomBytes(16).toString('hex');
-      const ip = req.socket.remoteAddress || "";
+      // Generate temporary peer ID for the connection
+      const tempPeerId = `peer_${randomBytes(8).toString('hex')}`;
       
-      console.log(`New peer connected: ${peerId} from ${ip}`);
-      this.connectedPeers.set(peerId, ws);
+      console.log(`P2P: New connection from ${req.socket.remoteAddress}, assigned tempId: ${tempPeerId}`);
       
-      // Handle authentication
-      ws.once('message', async (message: string) => {
+      // Store connection temporarily until authenticated
+      this.connectedPeers.set(tempPeerId, ws);
+      
+      // Handle first message as authentication
+      const authHandler = async (message: Buffer) => {
         try {
-          const auth = JSON.parse(message.toString());
+          const authMsg = JSON.parse(message.toString());
           
-          if (auth.type === 'auth' && auth.userId && auth.nodeId) {
-            // Authenticate the peer
+          if (authMsg.type === 'auth') {
+            // Remove auth handler after first message
+            ws.removeListener('message', authHandler);
+            
+            const { userId, nodeId, timestamp } = authMsg;
+            
+            if (!userId) {
+              ws.send(JSON.stringify({
+                type: 'auth_error',
+                error: 'Missing userId in authentication message'
+              }));
+              ws.close();
+              return;
+            }
+            
+            // Generate permanent peer ID
+            const peerId = nodeId || `peer_${randomBytes(16).toString('hex')}`;
+            
+            // Remove temporary peer
+            this.connectedPeers.delete(tempPeerId);
+            
+            // Update storage node if this is a provider node
+            if (nodeId) {
+              await this.updateNodeStatus(nodeId, 'online', req.socket.remoteAddress);
+            }
+            
+            // Store connection with permanent ID
+            this.connectedPeers.set(peerId, ws);
             this.peerMetadata.set(peerId, {
-              userId: auth.userId,
-              nodeId: auth.nodeId,
-              ip,
+              userId,
+              nodeId: nodeId || 'browser-client',
+              ip: req.socket.remoteAddress || 'unknown',
               lastActive: new Date()
             });
             
-            // Update node status in database
-            await this.updateNodeStatus(auth.nodeId, 'online', ip);
-            
-            // Send acknowledgment
+            // Send authentication success
             ws.send(JSON.stringify({
               type: 'auth_success',
               peerId,
               timestamp: new Date().toISOString()
             }));
             
-            // Set up message handling
+            // Setup message handling for this peer
             this.setupMessageHandling(ws, peerId);
+            
+            console.log(`P2P: Peer ${peerId} authenticated as user ${userId}`);
           } else {
-            // Invalid authentication
             ws.send(JSON.stringify({
               type: 'auth_error',
-              error: 'Invalid authentication'
+              error: 'First message must be authentication'
             }));
             ws.close();
-            this.connectedPeers.delete(peerId);
           }
         } catch (error) {
-          console.error('Authentication error:', error);
+          console.error('P2P: Authentication error:', error);
+          ws.send(JSON.stringify({
+            type: 'auth_error',
+            error: 'Invalid authentication message'
+          }));
           ws.close();
-          this.connectedPeers.delete(peerId);
         }
-      });
+      };
+      
+      // Listen for auth message
+      ws.on('message', authHandler);
       
       // Handle disconnection
-      ws.on('close', async () => {
-        const metadata = this.peerMetadata.get(peerId);
-        if (metadata) {
-          // Update node status in database
-          await this.updateNodeStatus(metadata.nodeId, 'offline');
-          this.peerMetadata.delete(peerId);
+      ws.on('close', () => {
+        if (this.connectedPeers.has(tempPeerId)) {
+          this.connectedPeers.delete(tempPeerId);
+          console.log(`P2P: Unauthenticated peer ${tempPeerId} disconnected`);
         }
-        this.connectedPeers.delete(peerId);
-        console.log(`Peer disconnected: ${peerId}`);
       });
       
-      ws.on('error', (error) => {
-        console.error(`WebSocket error for peer ${peerId}:`, error);
-      });
+      // Set connection timeout for authentication
+      setTimeout(() => {
+        if (this.connectedPeers.has(tempPeerId)) {
+          console.log(`P2P: Authentication timeout for ${tempPeerId}`);
+          ws.close();
+          this.connectedPeers.delete(tempPeerId);
+        }
+      }, 10000);
     });
   }
   
@@ -106,50 +141,79 @@ export class P2PTunnel {
     ws.on('message', async (message: Buffer) => {
       try {
         const metadata = this.peerMetadata.get(peerId);
-        if (!metadata) return;
+        if (!metadata) {
+          console.error(`P2P: Received message from unknown peer ${peerId}`);
+          return;
+        }
         
         // Update last active timestamp
         metadata.lastActive = new Date();
+        this.peerMetadata.set(peerId, metadata);
         
+        // Parse message
         const msg = JSON.parse(message.toString());
         
         // Handle different message types
         switch (msg.type) {
+          case 'heartbeat_ack':
+            // Just update the lastActive timestamp
+            break;
+            
           case 'peer_discovery':
-            // Send list of available peers for a specific region or query
-            await this.handlePeerDiscovery(ws, metadata.userId, msg.query);
+            await this.handlePeerDiscovery(ws, metadata.userId, msg.query || {});
             break;
             
           case 'chunk_request':
-            // Forward chunk request to the target peer
+            // Forward the request to target peer
             await this.forwardToTargetPeer(msg, metadata);
             break;
             
           case 'chunk_response':
-            // Forward chunk data to the requesting peer
-            await this.forwardToTargetPeer(msg, metadata);
+            // Forward the response back to the requester
+            if (msg.targetPeerId && this.connectedPeers.has(msg.targetPeerId)) {
+              const targetWs = this.connectedPeers.get(msg.targetPeerId);
+              targetWs?.send(JSON.stringify(msg));
+            }
             break;
             
-          case 'heartbeat':
-            // Respond to heartbeat to keep connection alive
-            ws.send(JSON.stringify({
-              type: 'heartbeat_ack',
-              timestamp: new Date().toISOString()
-            }));
-            break;
-            
-          case 'status_update':
-            // Update node status (storage, availability, etc.)
-            await this.updateNodeMetrics(metadata.nodeId, msg.metrics);
+          case 'node_metrics':
+            if (metadata.nodeId) {
+              await this.updateNodeMetrics(metadata.nodeId, msg.metrics || {});
+            }
             break;
             
           default:
-            console.warn(`Unknown message type: ${msg.type}`);
+            console.log(`P2P: Received unknown message type: ${msg.type}`);
         }
       } catch (error) {
-        console.error('Error handling message:', error);
+        console.error(`P2P: Error handling message from ${peerId}:`, error);
       }
     });
+    
+    ws.on('close', async () => {
+      const metadata = this.peerMetadata.get(peerId);
+      this.connectedPeers.delete(peerId);
+      this.peerMetadata.delete(peerId);
+      
+      console.log(`P2P: Peer ${peerId} disconnected`);
+      
+      // Update node status if it was a storage node
+      if (metadata?.nodeId && metadata.nodeId !== 'browser-client') {
+        await this.updateNodeStatus(metadata.nodeId, 'offline');
+      }
+    });
+    
+    // Send periodic heartbeats
+    const heartbeatInterval = setInterval(() => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'heartbeat',
+          timestamp: new Date().toISOString()
+        }));
+      } else {
+        clearInterval(heartbeatInterval);
+      }
+    }, 15000);
   }
   
   /**
@@ -157,33 +221,38 @@ export class P2PTunnel {
    */
   private async handlePeerDiscovery(ws: WebSocket, userId: number, query: any) {
     try {
-      // Query the database for available storage nodes
-      // Filter by region, reputation, etc. based on the query
-      const availableNodes = await db.select().from(storageNodes)
+      // Query for available storage nodes
+      const availableNodes = await db
+        .select()
+        .from(storageNodes)
         .where(and(
           eq(storageNodes.status, 'online'),
-          // Exclude the requesting user's own nodes
-          // eq(storageNodes.userId, 'not', userId)
+          sql`${storageNodes.storageAvailable} > 0`,
+          sql`${storageNodes.reputation} >= 70`
         ))
-        .limit(10);
+        .orderBy(desc(storageNodes.reputation));
       
-      // Send the list back to the requesting peer
+      // Map to response format with only necessary information
+      const peers = availableNodes.map(node => ({
+        nodeId: node.nodeId,
+        storageAvailable: node.storageAvailable,
+        reputation: node.reputation,
+        geolocation: node.geolocation,
+        // Don't include sensitive information like IP addresses
+      }));
+      
+      // Send response
       ws.send(JSON.stringify({
         type: 'peer_discovery_result',
-        peers: availableNodes.map(node => ({
-          nodeId: node.nodeId,
-          reputation: node.reputation,
-          storageAvailable: node.storageAvailable,
-          geolocation: node.geolocation,
-          uptimePercentage: node.uptimePercentage
-        })),
+        peers,
         timestamp: new Date().toISOString()
       }));
     } catch (error) {
-      console.error('Error in peer discovery:', error);
+      console.error('P2P: Error handling peer discovery:', error);
       ws.send(JSON.stringify({
-        type: 'error',
+        type: 'peer_discovery_result',
         error: 'Failed to discover peers',
+        peers: [],
         timestamp: new Date().toISOString()
       }));
     }
@@ -193,51 +262,57 @@ export class P2PTunnel {
    * Forward a message to the target peer
    */
   private async forwardToTargetPeer(msg: any, senderMetadata: any) {
+    const { targetNodeId } = msg;
+    
+    // Find a peer with this node ID
+    let targetPeerId: string | null = null;
+    
+    for (const [peerId, metadata] of this.peerMetadata.entries()) {
+      if (metadata.nodeId === targetNodeId) {
+        targetPeerId = peerId;
+        break;
+      }
+    }
+    
+    if (!targetPeerId || !this.connectedPeers.has(targetPeerId)) {
+      // Target peer not connected, send error response back
+      const senderPeer = this.connectedPeers.get(msg.peerId);
+      if (senderPeer && senderPeer.readyState === WebSocket.OPEN) {
+        senderPeer.send(JSON.stringify({
+          type: 'chunk_response',
+          chunkId: msg.chunkId,
+          error: 'Target node is not connected',
+          timestamp: new Date().toISOString()
+        }));
+      }
+      return;
+    }
+    
+    // Record the connection in the database for analytics
     try {
-      // Find target peer by nodeId
-      const targetNodeId = msg.targetNodeId;
-      
-      // Find the WebSocket connection for this node
-      let targetPeerId: string | undefined;
-      let targetMetadata: any | undefined;
-      
-      for (const [id, metadata] of this.peerMetadata.entries()) {
-        if (metadata.nodeId === targetNodeId) {
-          targetPeerId = id;
-          targetMetadata = metadata;
-          break;
-        }
-      }
-      
-      if (!targetPeerId || !targetMetadata) {
-        console.warn(`Target peer not found: ${targetNodeId}`);
-        return;
-      }
-      
-      const targetWs = this.connectedPeers.get(targetPeerId);
-      if (!targetWs || targetWs.readyState !== WebSocket.OPEN) {
-        console.warn(`Target peer connection not open: ${targetNodeId}`);
-        return;
-      }
-      
-      // Record the connection in the database
-      await db.insert(peerConnections).values({
-        sourceNodeId: parseInt(senderMetadata.nodeId),
-        targetNodeId: parseInt(targetNodeId),
-        connectionType: msg.type === 'chunk_request' ? 'download' : 'upload',
-        bytesSent: msg.data ? msg.data.length : 0,
-        status: 'success'
-      });
-      
-      // Forward the message
-      targetWs.send(JSON.stringify({
-        ...msg,
-        forwardedBy: 'server',
-        sourceNodeId: senderMetadata.nodeId,
-        timestamp: new Date().toISOString()
-      }));
+      await db
+        .insert(peerConnections)
+        .values({
+          sourceUserId: senderMetadata.userId,
+          targetNodeId,
+          connectionType: 'chunk_request',
+          timestamp: new Date()
+        });
     } catch (error) {
-      console.error('Error forwarding message:', error);
+      console.error('P2P: Error recording peer connection:', error);
+    }
+    
+    // Forward the request with sender info
+    const targetPeer = this.connectedPeers.get(targetPeerId);
+    if (targetPeer && targetPeer.readyState === WebSocket.OPEN) {
+      // Add the sender's peer ID so the target can respond directly
+      const forwardedMsg = {
+        ...msg,
+        targetPeerId: msg.peerId,
+        timestamp: new Date().toISOString()
+      };
+      
+      targetPeer.send(JSON.stringify(forwardedMsg));
     }
   }
   
@@ -246,27 +321,21 @@ export class P2PTunnel {
    */
   private async updateNodeStatus(nodeId: string, status: string, ip?: string) {
     try {
-      // Find the node in the database
-      const [node] = await db
-        .select()
-        .from(storageNodes)
-        .where(eq(storageNodes.nodeId, nodeId));
+      const updateData: any = {
+        status,
+        lastSeen: new Date()
+      };
       
-      if (node) {
-        // Update existing node
-        await db.update(storageNodes)
-          .set({
-            status,
-            lastSeen: new Date(),
-            ...(ip ? { ipAddress: ip } : {})
-          })
-          .where(eq(storageNodes.nodeId, nodeId));
-      } else {
-        // Node doesn't exist yet (should not happen as nodes are registered separately)
-        console.warn(`Attempted to update unknown node: ${nodeId}`);
+      if (ip) {
+        updateData.ip = ip;
       }
+      
+      await db
+        .update(storageNodes)
+        .set(updateData)
+        .where(eq(storageNodes.nodeId, nodeId));
     } catch (error) {
-      console.error('Error updating node status:', error);
+      console.error(`P2P: Error updating node status for ${nodeId}:`, error);
     }
   }
   
@@ -275,15 +344,28 @@ export class P2PTunnel {
    */
   private async updateNodeMetrics(nodeId: string, metrics: any) {
     try {
-      await db.update(storageNodes)
-        .set({
-          storageAvailable: metrics.storageAvailable || 0,
-          uptimePercentage: metrics.uptimePercentage || 100,
-          performanceMetrics: metrics.performance || null
-        })
+      const updateData: any = {
+        lastSeen: new Date()
+      };
+      
+      if (metrics.storageAvailable !== undefined) {
+        updateData.storageAvailable = metrics.storageAvailable;
+      }
+      
+      if (metrics.storageUsed !== undefined) {
+        updateData.storageUsed = metrics.storageUsed;
+      }
+      
+      if (metrics.chunkCount !== undefined) {
+        updateData.chunkCount = metrics.chunkCount;
+      }
+      
+      await db
+        .update(storageNodes)
+        .set(updateData)
         .where(eq(storageNodes.nodeId, nodeId));
     } catch (error) {
-      console.error('Error updating node metrics:', error);
+      console.error(`P2P: Error updating node metrics for ${nodeId}:`, error);
     }
   }
   
@@ -292,14 +374,15 @@ export class P2PTunnel {
    */
   private performHealthChecks() {
     const now = new Date();
+    const timeoutThreshold = 60000; // 60 seconds
     
     for (const [peerId, metadata] of this.peerMetadata.entries()) {
-      // Check if the peer has been inactive for too long (5 minutes)
-      const inactiveTime = now.getTime() - metadata.lastActive.getTime();
-      if (inactiveTime > 5 * 60 * 1000) {
-        console.log(`Peer ${peerId} inactive for too long, disconnecting`);
+      const timeSinceLastActive = now.getTime() - metadata.lastActive.getTime();
+      
+      if (timeSinceLastActive > timeoutThreshold) {
+        console.log(`P2P: Peer ${peerId} timed out (inactive for ${timeSinceLastActive}ms)`);
         
-        // Close connection
+        // Close the connection
         const ws = this.connectedPeers.get(peerId);
         if (ws) {
           ws.close();
@@ -309,44 +392,11 @@ export class P2PTunnel {
         this.connectedPeers.delete(peerId);
         this.peerMetadata.delete(peerId);
         
-        // Update node status
-        this.updateNodeStatus(metadata.nodeId, 'offline');
-      } else {
-        // Send heartbeat to check if connection is still alive
-        const ws = this.connectedPeers.get(peerId);
-        if (ws && ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({
-            type: 'heartbeat',
-            timestamp: now.toISOString()
-          }));
+        // Update node status if it was a storage node
+        if (metadata.nodeId && metadata.nodeId !== 'browser-client') {
+          this.updateNodeStatus(metadata.nodeId, 'offline');
         }
       }
-    }
-  }
-  
-  /**
-   * Register a new storage node in the system
-   */
-  public async registerNode(userId: number, storageTotal: number, geolocation?: string) {
-    try {
-      // Generate a unique node ID
-      const nodeId = randomBytes(12).toString('hex');
-      
-      // Create the node in the database
-      await db.insert(storageNodes).values({
-        userId,
-        nodeId,
-        storageTotal,
-        storageAvailable: storageTotal,
-        status: 'offline',
-        geolocation: geolocation || 'unknown',
-        version: '1.0.0'
-      });
-      
-      return { nodeId };
-    } catch (error) {
-      console.error('Error registering node:', error);
-      throw error;
     }
   }
 }

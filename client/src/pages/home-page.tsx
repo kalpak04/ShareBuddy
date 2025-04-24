@@ -59,14 +59,14 @@ export default function HomePage() {
 
   // Reserve default storage for new users (10 GB)
   const handleReserveDefaultStorage = () => {
-    if (user && user.storageReserved === 0) {
+    if (user && (!user.storageReserved || user.storageReserved === 0)) {
       reserveStorageMutation.mutate(10240); // 10 GB in MB
     }
   };
 
   // Handle storage options click
   const handleRenterClick = () => {
-    if (user && user.storageReserved === 0) {
+    if (user && (!user.storageReserved || user.storageReserved === 0)) {
       handleReserveDefaultStorage();
     }
   };
@@ -93,10 +93,10 @@ export default function HomePage() {
       <StorageStatus 
         usedStorage={user?.storageUsed || 0} 
         totalStorage={user?.storageReserved || 0} 
-        showAlert={user?.storageReserved > 0}
+        showAlert={!!user?.storageReserved && user?.storageReserved > 0}
       />
 
-      {user?.storageReserved === 0 ? (
+      {!user?.storageReserved || user?.storageReserved === 0 ? (
         <div className="mb-5">
           <h2 className="font-medium mb-3">Get Started with ShareBuddy</h2>
           <p className="text-sm text-muted-foreground mb-4">
@@ -132,9 +132,12 @@ export default function HomePage() {
           {/* Quick Access / Recent Files */}
           <div className="flex justify-between items-center mb-3">
             <h2 className="font-medium">Recent Files</h2>
-            <Link href="/files">
-              <a className="text-xs text-primary font-medium">View All</a>
-            </Link>
+            <span 
+              className="text-xs text-primary font-medium cursor-pointer" 
+              onClick={() => navigate("/files")}
+            >
+              View All
+            </span>
           </div>
           <div className="bg-white rounded-xl shadow-sm overflow-hidden mb-6">
             {filesLoading ? (
@@ -146,9 +149,13 @@ export default function HomePage() {
             ) : (
               <div className="p-4 text-center text-muted-foreground">
                 <p className="mb-2">No files uploaded yet</p>
-                <Link href="/backup">
-                  <Button variant="outline" size="sm">Start Backup</Button>
-                </Link>
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => navigate("/backup")}
+                >
+                  Start Backup
+                </Button>
               </div>
             )}
           </div>

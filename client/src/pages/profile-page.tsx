@@ -1,6 +1,6 @@
 import { useAuth } from "@/hooks/use-auth";
 import { Link, useLocation } from "wouter";
-import { Settings, UserCircle, Lock, CreditCard, Settings2, HelpCircle, Mail, Book, LogOut } from "lucide-react";
+import { Settings, UserCircle, Lock, CreditCard, HelpCircle, Mail, Book, LogOut, Network, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ProgressCircle } from "@/components/ui/progress-circle";
 import { formatSizeForDisplay } from "@/lib/utils";
@@ -80,7 +80,7 @@ export default function ProfilePage() {
           {/* Provider Role */}
           <div className={`${user?.role === 'provider' || user?.role === 'both' ? 'bg-secondary/10 border-l-4 border-secondary' : 'bg-gray-100 border-l-4 border-gray-300'} p-3 rounded-lg`}>
             <div className="flex items-center mb-1">
-              <Settings2 className={`h-5 w-5 ${user?.role === 'provider' || user?.role === 'both' ? 'text-secondary' : 'text-muted-foreground'} mr-2`} />
+              <Shield className={`h-5 w-5 ${user?.role === 'provider' || user?.role === 'both' ? 'text-secondary' : 'text-muted-foreground'} mr-2`} />
               <h3 className={`text-sm font-medium ${user?.role === 'provider' || user?.role === 'both' ? 'text-secondary' : ''}`}>Storage Provider</h3>
             </div>
             <p className="text-sm text-muted-foreground mb-2">
@@ -150,9 +150,20 @@ export default function ProfilePage() {
             </svg>
           </div>
           
-          <div className="p-4 flex items-center">
+          <div className="p-4 border-b border-gray-100 flex items-center">
             <Settings className="h-5 w-5 text-muted-foreground mr-3" />
             <span className="text-sm">App Settings</span>
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-muted-foreground ml-auto" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+            </svg>
+          </div>
+          
+          <div 
+            className="p-4 flex items-center cursor-pointer hover:bg-gray-50"
+            onClick={() => navigate("/p2p-settings")}
+          >
+            <Network className="h-5 w-5 text-muted-foreground mr-3" />
+            <span className="text-sm">P2P & Security Settings</span>
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-muted-foreground ml-auto" viewBox="0 0 20 20" fill="currentColor">
               <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
             </svg>

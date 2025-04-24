@@ -160,8 +160,112 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // P2P routes for storage providers
+  app.post("/api/p2p/node/register", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    
+    try {
+      // Import P2P tunnel dynamically to avoid circular dependencies
+      const { StorageController } = await import("./p2p");
+      const storageController = new StorageController();
+      
+      // Get storage amount from request
+      const { storageTotal, geolocation } = req.body;
+      if (!storageTotal || isNaN(parseInt(storageTotal))) {
+        return res.status(400).json({ message: "Invalid storage amount" });
+      }
+      
+      // Register the node
+      const result = await storageController.registerNode(
+        req.user!.id, 
+        parseInt(storageTotal),
+        geolocation
+      );
+      
+      res.status(201).json(result);
+    } catch (error) {
+      console.error("Node registration error:", error);
+      res.status(500).json({ message: "Failed to register storage node" });
+    }
+  });
+  
+  // Route for file distribution
+  app.post("/api/p2p/file/distribute/:fileId", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    
+    try {
+      const fileId = parseInt(req.params.fileId);
+      if (isNaN(fileId)) {
+        return res.status(400).json({ message: "Invalid file ID" });
+      }
+      
+      // Get the file from storage
+      const file = await storage.getFile(fileId);
+      if (!file) {
+        return res.status(404).json({ message: "File not found" });
+      }
+      
+      if (file.userId !== req.user!.id) {
+        return res.status(403).json({ message: "You don't have permission to distribute this file" });
+      }
+      
+      // In a real implementation, we would get the actual file data here
+      // For this demo, we'll simulate file data
+      const { StorageController } = await import("./p2p");
+      const storageController = new StorageController();
+      
+      // Normally we'd get the file from storage, but for demo purposes:
+      const mockFileData = Buffer.from(`This is mock data for file ${fileId}`);
+      
+      // Process the file for distribution
+      const result = await storageController.processFileForDistribution(
+        fileId,
+        req.user!.id,
+        mockFileData,
+        req.body.reliability || 3
+      );
+      
+      res.json(result);
+    } catch (error) {
+      console.error("File distribution error:", error);
+      res.status(500).json({ message: "Failed to distribute file" });
+    }
+  });
+  
+  // Route for file retrieval
+  app.get("/api/p2p/file/retrieve/:fileId", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    
+    try {
+      const fileId = parseInt(req.params.fileId);
+      if (isNaN(fileId)) {
+        return res.status(400).json({ message: "Invalid file ID" });
+      }
+      
+      // Initialize storage controller
+      const { StorageController } = await import("./p2p");
+      const storageController = new StorageController();
+      
+      // Retrieve the file
+      const result = await storageController.retrieveFile(fileId, req.user!.id);
+      
+      res.json(result);
+    } catch (error) {
+      console.error("File retrieval error:", error);
+      res.status(500).json({ message: "Failed to retrieve file" });
+    }
+  });
+  
   // Create HTTP server
   const httpServer = createServer(app);
+  
+  // Initialize P2P tunnel
+  import("./p2p").then(({ initializeP2P }) => {
+    initializeP2P(httpServer);
+    console.log("P2P tunnel initialized");
+  }).catch(error => {
+    console.error("Failed to initialize P2P tunnel:", error);
+  });
   
   return httpServer;
 }
