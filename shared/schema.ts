@@ -13,6 +13,8 @@ export const users = pgTable("users", {
   storageUsed: integer("storage_used").default(0), // in MB
   storageShared: integer("storage_shared").default(0), // in MB for providers
   earnings: integer("earnings").default(0), // in paisa (1/100 of rupee)
+  stripeCustomerId: text("stripe_customer_id"), // Stripe customer ID for payments
+  stripeSubscriptionId: text("stripe_subscription_id"), // Stripe subscription ID if any
 });
 
 export const files = pgTable("files", {

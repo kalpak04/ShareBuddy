@@ -53,6 +53,112 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to update reserved storage" });
     }
   });
+  
+  // Payment Routes
+  app.post("/api/payments/storage-rental", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    
+    try {
+      const { providerId, storageAmount } = req.body;
+      
+      if (!providerId || isNaN(parseInt(providerId))) {
+        return res.status(400).json({ message: "Invalid provider ID" });
+      }
+      
+      if (!storageAmount || isNaN(parseInt(storageAmount))) {
+        return res.status(400).json({ message: "Invalid storage amount" });
+      }
+      
+      // Import the payment service
+      const { PaymentService } = await import("./payment");
+      
+      // Standard pricing is 1 rupee per GB per month
+      const pricePerGB = 1;
+      
+      // Process payment
+      const paymentResult = await PaymentService.processStorageRental(
+        req.user!.id,
+        parseInt(providerId),
+        parseInt(storageAmount),
+        pricePerGB
+      );
+      
+      res.status(200).json(paymentResult);
+    } catch (error: any) {
+      console.error("Payment error:", error);
+      res.status(500).json({ message: error.message || "Payment processing failed" });
+    }
+  });
+  
+  // Endpoint to confirm a successful payment and update provider earnings
+  app.post("/api/payments/confirm", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    
+    try {
+      const { paymentIntentId, providerId } = req.body;
+      
+      if (!paymentIntentId) {
+        return res.status(400).json({ message: "Missing payment intent ID" });
+      }
+      
+      if (!providerId || isNaN(parseInt(providerId))) {
+        return res.status(400).json({ message: "Invalid provider ID" });
+      }
+      
+      // Import the payment service
+      const { PaymentService } = await import("./payment");
+      
+      // Confirm payment and update provider earnings
+      const result = await PaymentService.confirmProviderEarnings(
+        paymentIntentId,
+        parseInt(providerId)
+      );
+      
+      // Update storage allocation for the renter
+      const { storageAmount } = req.body;
+      if (storageAmount && !isNaN(parseInt(storageAmount))) {
+        const renter = await storage.getUser(req.user!.id);
+        if (renter) {
+          const currentReserved = renter.storageReserved || 0;
+          await storage.updateUser(req.user!.id, {
+            storageReserved: currentReserved + parseInt(storageAmount)
+          });
+        }
+      }
+      
+      res.status(200).json(result);
+    } catch (error: any) {
+      console.error("Payment confirmation error:", error);
+      res.status(500).json({ message: error.message || "Payment confirmation failed" });
+    }
+  });
+  
+  // Create subscription for premium features
+  app.post("/api/payments/subscription", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    
+    try {
+      const { planId } = req.body;
+      
+      if (!planId) {
+        return res.status(400).json({ message: "Missing plan ID" });
+      }
+      
+      // Import the payment service
+      const { PaymentService } = await import("./payment");
+      
+      // Create subscription
+      const result = await PaymentService.createSubscription(
+        req.user!.id,
+        planId
+      );
+      
+      res.status(200).json(result);
+    } catch (error: any) {
+      console.error("Subscription error:", error);
+      res.status(500).json({ message: error.message || "Subscription creation failed" });
+    }
+  });
 
   // File Routes
   app.get("/api/files", async (req, res) => {

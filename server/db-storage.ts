@@ -139,7 +139,9 @@ export class DatabaseStorage implements IStorage {
         role: "both",
         storageReserved: 102400, // 100GB
         storageShared: 204800,   // 200GB
-        earnings: 50000          // ₹500
+        earnings: 50000,         // ₹500
+        stripeCustomerId: null,
+        stripeSubscriptionId: null
       };
       
       // Regular users with different roles
@@ -153,7 +155,9 @@ export class DatabaseStorage implements IStorage {
           storageReserved: 0,
           storageUsed: 0,
           storageShared: 51200,  // 50GB
-          earnings: 2000         // ₹20
+          earnings: 2000,        // ₹20
+          stripeCustomerId: null,
+          stripeSubscriptionId: null
         },
         {
           username: "renter",
@@ -164,7 +168,9 @@ export class DatabaseStorage implements IStorage {
           storageReserved: 20480, // 20GB
           storageUsed: 10240,     // 10GB used
           storageShared: 0,
-          earnings: 0
+          earnings: 0,
+          stripeCustomerId: null,
+          stripeSubscriptionId: null
         },
         {
           username: "both",
