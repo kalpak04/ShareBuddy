@@ -24,7 +24,7 @@ export interface IStorage {
   deleteFile(id: number): Promise<boolean>;
   
   // Session store
-  sessionStore: session.SessionStore;
+  sessionStore: session.Store;
 }
 
 export class MemStorage implements IStorage {
@@ -32,7 +32,7 @@ export class MemStorage implements IStorage {
   private files: Map<number, File>;
   currentUserId: number;
   currentFileId: number;
-  sessionStore: session.SessionStore;
+  sessionStore: session.Store;
 
   constructor() {
     this.users = new Map();
@@ -302,4 +302,6 @@ export class MemStorage implements IStorage {
   }
 }
 
-export const storage = new MemStorage();
+// Use database storage instead of memory storage
+import { DatabaseStorage } from "./db-storage";
+export const storage = new DatabaseStorage();

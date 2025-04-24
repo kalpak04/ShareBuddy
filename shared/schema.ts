@@ -15,18 +15,6 @@ export const users = pgTable("users", {
   earnings: integer("earnings").default(0), // in paisa (1/100 of rupee)
 });
 
-export const insertUserSchema = createInsertSchema(users).pick({
-  username: true,
-  password: true,
-  email: true,
-  fullName: true,
-});
-
-export const loginUserSchema = z.object({
-  username: z.string().min(3),
-  password: z.string().min(6),
-});
-
 export const files = pgTable("files", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull(),
@@ -38,6 +26,18 @@ export const files = pgTable("files", {
   status: text("status").default("pending"), // "pending", "backing_up", "backed_up"
   uploaded: boolean("uploaded").default(false),
   createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertUserSchema = createInsertSchema(users).pick({
+  username: true,
+  password: true,
+  email: true,
+  fullName: true,
+});
+
+export const loginUserSchema = z.object({
+  username: z.string().min(3),
+  password: z.string().min(6),
 });
 
 export const insertFileSchema = createInsertSchema(files).pick({
